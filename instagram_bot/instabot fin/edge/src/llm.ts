@@ -3,6 +3,14 @@ import { metrics } from "./metrics.js";
 
 export type Surface = "comment" | "dm";
 export type Lang = "kk" | "ru";
+export interface GenerateReplyResult {
+  reply: string;
+  meta?: {
+    language: Lang;
+    elapsedMs: number;
+    retrieved: Array<{ id: number; heading: string }>;
+  };
+}
 
 // Thin client for the internal model server (Ollama + RAG). Reply generation
 // happens there; the edge node only forwards the question and posts the answer.
@@ -30,6 +38,32 @@ export async function generateReply(opts: {
     throw new Error("model server returned an empty reply");
   }
   return data.reply.trim();
+}
+
+export async function generateReplyWithMeta(opts: {
+  surface: Surface;
+  userMessage: string;
+  username?: string;
+  languageHint?: Lang;
+}): Promise<GenerateReplyResult> {
+  const started = Date.now();
+  const res = await fetch(`${config.modelServerUrl}/generate-reply`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(opts),
+    signal: AbortSignal.timeout(config.llmTimeoutMs),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`model server ${res.status}: ${text.slice(0, 500)}`);
+  }
+  metrics.observeLatency("model_server_ms", Date.now() - started);
+
+  const data = JSON.parse(text) as GenerateReplyResult;
+  if (typeof data.reply !== "string" || !data.reply.trim()) {
+    throw new Error("model server returned an empty reply");
+  }
+  return { ...data, reply: data.reply.trim() };
 }
 
 export async function modelServerHealthy(): Promise<boolean> {

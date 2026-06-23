@@ -26,12 +26,22 @@ function optionalNumber(name: string, fallback: number): number {
   return n;
 }
 
+function optionalBoolean(name: string, fallback: boolean): boolean {
+  const raw = process.env[name]?.trim().toLowerCase();
+  if (!raw) return fallback;
+  return raw !== "false" && raw !== "0" && raw !== "no";
+}
+
+const webhookSignatureRequired = optionalBoolean("WEBHOOK_SIGNATURE_REQUIRED", true);
+
 export const config = {
   port: optionalNumber("PORT", 3000),
 
   igUserId: required("IG_USER_ID"),
   igAccessToken: required("IG_ACCESS_TOKEN"),
   webhookVerifyToken: required("IG_WEBHOOK_VERIFY_TOKEN"),
+  igAppSecret: webhookSignatureRequired ? required("IG_APP_SECRET") : optional("IG_APP_SECRET", ""),
+  webhookSignatureRequired,
   graphHost: optional("IG_GRAPH_HOST", "https://graph.instagram.com"),
 
   // Internal-LAN URL of the model server, e.g. http://10.0.0.5:8080
@@ -50,6 +60,8 @@ export const config = {
   auditRetentionDays: optionalNumber("AUDIT_RETENTION_DAYS", 90),
   // Refresh the IG token when it is older than this many days (expiry ~60d).
   tokenRefreshDays: optionalNumber("IG_TOKEN_REFRESH_DAYS", 7),
+  rateLimitMaxEvents: optionalNumber("RATE_LIMIT_MAX_EVENTS", 8),
+  rateLimitWindowMs: optionalNumber("RATE_LIMIT_WINDOW_MS", 10 * 60_000),
 };
 
 function normalizeUrl(value: string): string {

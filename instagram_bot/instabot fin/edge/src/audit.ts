@@ -10,6 +10,15 @@ export interface AuditEntry {
   username?: string;
   text: string;
   flag?: string;
+  language?: "kk" | "ru";
+  replyChars?: number;
+  model?: {
+    elapsedMs?: number;
+    retrieved?: Array<{ id: number; heading: string }>;
+  };
+  rateLimit?: {
+    resetAt: string;
+  };
 }
 
 // Compliance audit trail: every inbound message and outbound reply, one JSONL

@@ -5,12 +5,14 @@ import { logger } from "./logger.js";
 import { metrics } from "./metrics.js";
 import { dedupStore, auditLog } from "./runtime.js";
 import { RetryQueue } from "./queue.js";
+import { RateLimiter } from "./rate-limit.js";
+import { verifyMetaSignature } from "./signature.js";
 import {
   replyToComment,
   sendDirectMessage,
   getCommentText,
 } from "./instagram.js";
-import { generateReply, type Surface } from "./llm.js";
+import { generateReplyWithMeta, type GenerateReplyResult, type Surface } from "./llm.js";
 import {
   containsSensitive,
   detectLanguage,
@@ -56,17 +58,28 @@ const queue = new RetryQueue<InboundJob>(processJob, {
     });
   },
 });
+const rateLimiter = new RateLimiter(config.rateLimitMaxEvents, config.rateLimitWindowMs);
+setInterval(() => rateLimiter.prune(), config.rateLimitWindowMs).unref();
 
 export function queueDepth(): number {
   return queue.pending;
 }
 
 export async function handleEvent(req: Request, res: Response) {
-  // TODO(infosec): verify Meta's X-Hub-Signature-256 (HMAC-SHA256 of the raw
-  // body with the app secret) and reject mismatches with 403. The raw body is
-  // already captured as req.rawBody in index.ts. Implementation pending the
-  // information-security review of webhook ingestion — do not expose this
-  // endpoint to the internet without it.
+  if (
+    config.webhookSignatureRequired &&
+    !verifyMetaSignature({
+      appSecret: config.igAppSecret,
+      rawBody: (req as Request & { rawBody?: Buffer }).rawBody ?? Buffer.alloc(0),
+      signatureHeader: req.headers["x-hub-signature-256"],
+    })
+  ) {
+    metrics.inc("webhook_signature_rejected");
+    logger.warn("webhook rejected: invalid Meta signature");
+    res.sendStatus(403);
+    return;
+  }
+
   res.sendStatus(200);
   metrics.inc("webhook_events_received");
 
@@ -153,30 +166,56 @@ async function processJob(job: InboundJob) {
   }
 
   if (!job.audited) {
+    const language = detectLanguage(text);
     auditLog.record({
       direction: "in",
       surface: job.surface,
       peerId: job.targetId,
       username: job.username,
       text,
+      language,
       ...(containsSensitive(text) ? { flag: "sensitive" } : {}),
     });
     job.audited = true;
   }
 
   let reply: string;
+  let result: GenerateReplyResult | undefined;
+  let outAudited = false;
   const language = detectLanguage(text);
-  if (containsSensitive(text)) {
+  const limit = rateLimiter.check(`${job.surface}:${job.targetId}`);
+  if (!limit.allowed) {
+    metrics.inc("events_rate_limited");
+    reply = RATE_LIMIT_REPLY[language];
+    auditLog.record({
+      direction: "out",
+      surface: job.surface,
+      peerId: job.targetId,
+      text: reply,
+      language,
+      flag: "rate_limited",
+      rateLimit: { resetAt: limit.resetAt },
+      replyChars: reply.length,
+    });
+    outAudited = true;
+    logger.warn("reply rate-limited", {
+      surface: job.surface,
+      targetId: job.targetId,
+      language,
+      resetAt: limit.resetAt,
+    });
+  } else if (containsSensitive(text)) {
     // Never forward raw sensitive data to the model; warn the user instead.
     metrics.inc("sensitive_blocked");
     reply = SENSITIVE_WARNING[language];
   } else {
-    reply = await generateReply({
+    result = await generateReplyWithMeta({
       surface: job.surface,
       userMessage: text,
       username: job.username,
       languageHint: language,
     });
+    reply = result.reply;
   }
 
   if (job.surface === "comment") {
@@ -185,12 +224,28 @@ async function processJob(job: InboundJob) {
     await sendDirectMessage(job.targetId, reply);
   }
 
-  auditLog.record({
-    direction: "out",
-    surface: job.surface,
-    peerId: job.targetId,
-    text: reply,
-  });
+  if (!outAudited) {
+    auditLog.record({
+      direction: "out",
+      surface: job.surface,
+      peerId: job.targetId,
+      text: reply,
+      language,
+      replyChars: reply.length,
+      ...(result?.meta ? { model: result.meta } : {}),
+    });
+  }
   metrics.inc(`replies_sent_${job.surface}`);
-  logger.info("reply sent", { surface: job.surface, targetId: job.targetId });
+  logger.info("reply sent", {
+    surface: job.surface,
+    targetId: job.targetId,
+    language,
+    replyChars: reply.length,
+    retrieved: result?.meta?.retrieved,
+  });
 }
+
+const RATE_LIMIT_REPLY = {
+  ru: "Получили несколько сообщений подряд. Пожалуйста, подождите немного — я отвечу на следующий вопрос чуть позже.",
+  kk: "Қатарынан бірнеше хабарлама келді. Өтінеміз, сәл күтіңіз — келесі сұрағыңызға біраздан кейін жауап беремін.",
+};

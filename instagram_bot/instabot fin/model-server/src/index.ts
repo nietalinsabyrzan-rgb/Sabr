@@ -12,6 +12,7 @@ import {
   FALLBACK_REPLY,
   type Surface,
 } from "./prompt.js";
+import { detectLanguage, type Lang } from "./language.js";
 
 const knowledge = readFileSync(config.knowledgePath, "utf8");
 const chunks = chunkKnowledge(knowledge, config.ragChunkSize, config.ragChunkOverlap);
@@ -79,6 +80,7 @@ app.post("/generate-reply", async (req, res) => {
 
   const started = Date.now();
   try {
+    const language = (languageHint ?? detectLanguage(userMessage)) as Lang;
     const relevant = await index.retrieve(userMessage, config.ragTopK);
     const reply = await chatCompletion({
       system: buildSystemPrompt(relevant),
@@ -86,16 +88,34 @@ app.post("/generate-reply", async (req, res) => {
         surface: surface as Surface,
         userMessage,
         username,
-        languageHint,
+        languageHint: language,
       }),
     });
+    const elapsedMs = Date.now() - started;
+    const retrieved = relevant.map((chunk) => ({
+      id: chunk.id,
+      heading: chunk.heading,
+    }));
 
     metrics.inc("replies_generated");
-    metrics.observeLatency("generate_ms", Date.now() - started);
+    metrics.inc(`replies_generated_${language}`);
+    metrics.observeLatency("generate_ms", elapsedMs);
+    logger.info("reply generated", {
+      surface,
+      language,
+      elapsedMs,
+      replyChars: reply.length,
+      retrieved,
+    });
     res.json({
       reply:
         reply ||
-        FALLBACK_REPLY[(languageHint ?? "ru") as "kk" | "ru"][surface as Surface],
+        FALLBACK_REPLY[language][surface as Surface],
+      meta: {
+        language,
+        elapsedMs,
+        retrieved,
+      },
     });
   } catch (err) {
     metrics.inc("generate_failures");
