@@ -1,0 +1,20 @@
+[Unit]
+Description=Otbasy Instagram Bot Model Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=otbasybot
+Group=otbasybot
+WorkingDirectory=/opt/otbasy-instabot
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/otbasy-instabot/model.env
+ExecStart=/usr/bin/npm run start:model
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,20 @@
+[Unit]
+Description=Otbasy Instagram Bot Edge Service
+After=network-online.target otbasy-instabot-model.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=otbasybot
+Group=otbasybot
+WorkingDirectory=/opt/otbasy-instabot
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/otbasy-instabot/edge.env
+ExecStart=/usr/bin/npm run start:edge
+Restart=always
+RestartSec=5
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
