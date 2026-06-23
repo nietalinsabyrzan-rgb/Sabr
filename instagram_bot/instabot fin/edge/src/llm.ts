@@ -2,6 +2,7 @@ import { config } from "./config.js";
 import { metrics } from "./metrics.js";
 
 export type Surface = "comment" | "dm";
+export type Lang = "kk" | "ru";
 
 // Thin client for the internal model server (Ollama + RAG). Reply generation
 // happens there; the edge node only forwards the question and posts the answer.
@@ -9,6 +10,7 @@ export async function generateReply(opts: {
   surface: Surface;
   userMessage: string;
   username?: string;
+  languageHint?: Lang;
 }): Promise<string> {
   const started = Date.now();
   const res = await fetch(`${config.modelServerUrl}/generate-reply`, {

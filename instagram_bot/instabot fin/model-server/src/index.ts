@@ -59,14 +59,16 @@ app.get("/readyz", async (_req, res) => {
 app.get("/metrics", (_req, res) => res.json(metrics.snapshot()));
 
 app.post("/generate-reply", async (req, res) => {
-  const { surface, userMessage, username } = req.body ?? {};
+  const { surface, userMessage, username, languageHint } = req.body ?? {};
   if (
     (surface !== "comment" && surface !== "dm") ||
     typeof userMessage !== "string" ||
-    !userMessage.trim()
+    !userMessage.trim() ||
+    (languageHint !== undefined && languageHint !== "kk" && languageHint !== "ru")
   ) {
     res.status(400).json({
-      error: "expected { surface: 'comment'|'dm', userMessage: string, username? }",
+      error:
+        "expected { surface: 'comment'|'dm', userMessage: string, username?, languageHint?: 'kk'|'ru' }",
     });
     return;
   }
@@ -80,12 +82,21 @@ app.post("/generate-reply", async (req, res) => {
     const relevant = await index.retrieve(userMessage, config.ragTopK);
     const reply = await chatCompletion({
       system: buildSystemPrompt(relevant),
-      user: buildUserPrompt({ surface: surface as Surface, userMessage, username }),
+      user: buildUserPrompt({
+        surface: surface as Surface,
+        userMessage,
+        username,
+        languageHint,
+      }),
     });
 
     metrics.inc("replies_generated");
     metrics.observeLatency("generate_ms", Date.now() - started);
-    res.json({ reply: reply || FALLBACK_REPLY[surface as Surface] });
+    res.json({
+      reply:
+        reply ||
+        FALLBACK_REPLY[(languageHint ?? "ru") as "kk" | "ru"][surface as Surface],
+    });
   } catch (err) {
     metrics.inc("generate_failures");
     logger.error("generate-reply failed", { error: String(err) });

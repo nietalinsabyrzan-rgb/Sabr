@@ -44,5 +44,8 @@ test("containsSensitive is stable across repeated calls", () => {
 
 test("detects Kazakh vs Russian", () => {
   assert.equal(detectLanguage("Сәлеметсіз бе, депозит туралы сұрағым бар"), "kk");
+  assert.equal(detectLanguage("Салем, депозит жайлы айтып бересиз бе"), "kk");
+  assert.equal(detectLanguage("Тұрғын үй несиесін қалай алуға болады?"), "kk");
   assert.equal(detectLanguage("Здравствуйте, какая ставка по депозиту?"), "ru");
+  assert.equal(detectLanguage("Подскажите условия по ипотеке"), "ru");
 });

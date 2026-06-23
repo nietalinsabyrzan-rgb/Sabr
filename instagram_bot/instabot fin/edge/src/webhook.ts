@@ -165,15 +165,17 @@ async function processJob(job: InboundJob) {
   }
 
   let reply: string;
+  const language = detectLanguage(text);
   if (containsSensitive(text)) {
     // Never forward raw sensitive data to the model; warn the user instead.
     metrics.inc("sensitive_blocked");
-    reply = SENSITIVE_WARNING[detectLanguage(text)];
+    reply = SENSITIVE_WARNING[language];
   } else {
     reply = await generateReply({
       surface: job.surface,
       userMessage: text,
       username: job.username,
+      languageHint: language,
     });
   }
 
