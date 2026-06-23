@@ -1,0 +1,18 @@
+{
+  "name": "otbasy-instabot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Otbasy Bank Instagram bot — edge node (webhooks + Graph API) and internal model server (Ollama + RAG)",
+  "workspaces": [
+    "edge",
+    "model-server"
+  ],
+  "scripts": {
+    "build": "npm run build -w edge && npm run build -w model-server",
+    "test": "npm test -w edge && npm test -w model-server",
+    "start:edge": "npm start -w edge",
+    "start:model": "npm start -w model-server",
+    "dev:edge": "npm run dev -w edge",
+    "dev:model": "npm run dev -w model-server"
+  }
+}

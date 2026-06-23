@@ -1,0 +1,23 @@
+{
+  "name": "otbasy-instabot-model-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Internal model server: Ollama + RAG over knowledge.md, exposes POST /generate-reply on the LAN. No internet access required at runtime.",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "dev": "tsx watch src/index.ts",
+    "test": "tsx --test src/*.test.ts"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.11.0",
+    "tsx": "^4.7.0",
+    "typescript": "^5.4.0"
+  }
+}
