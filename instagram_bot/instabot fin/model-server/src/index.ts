@@ -2,6 +2,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import express from "express";
 import { config } from "./config.js";
+import { activeChatModel, embeddingCacheKey } from "./config.js";
 import { logger } from "./logger.js";
 import { metrics } from "./metrics.js";
 import { chunkKnowledge, knowledgeCacheKey, RagIndex } from "./rag.js";
@@ -13,6 +14,7 @@ import {
   type Surface,
 } from "./prompt.js";
 import { detectLanguage, type Lang } from "./language.js";
+import { KAZAKH_QUALITY_FALLBACK, kazakhQualityIssues } from "./reply-quality.js";
 
 const knowledge = readFileSync(config.knowledgePath, "utf8");
 const chunks = chunkKnowledge(knowledge, config.ragChunkSize, config.ragChunkOverlap);
@@ -20,7 +22,7 @@ const index = new RagIndex(
   chunks,
   embedTexts,
   join(config.dataDir, "rag-cache.json"),
-  knowledgeCacheKey(knowledge, config.embedModel),
+  knowledgeCacheKey(knowledge, embeddingCacheKey),
 );
 
 // Build the index in the background and keep retrying.
@@ -46,13 +48,14 @@ app.use(express.json({ limit: "1mb" }));
 app.get("/healthz", (_req, res) => res.status(200).json({ status: "ok" }));
 
 app.get("/readyz", async (_req, res) => {
-  const openaiOk = await ollamaReachable(); // reused name, checks OpenAI
-  const ready = index.ready && openaiOk;
+  const providerOk = await ollamaReachable();
+  const ready = index.ready && providerOk;
   res.status(ready ? 200 : 503).json({
     status: ready ? "ready" : "not ready",
     ragIndex: index.ready ? `built (${index.chunkCount} chunks)` : "building",
-    openai: openaiOk ? "reachable" : "unreachable",
-    model: config.openaiModel,
+    provider: config.llmProvider,
+    providerStatus: providerOk ? "reachable" : "unreachable",
+    model: activeChatModel,
     embedModel: config.embedModel,
   });
 });
@@ -82,7 +85,7 @@ app.post("/generate-reply", async (req, res) => {
   try {
     const language = (languageHint ?? detectLanguage(userMessage)) as Lang;
     const relevant = await index.retrieve(userMessage, config.ragTopK);
-    const reply = await chatCompletion({
+    let reply = await chatCompletion({
       system: buildSystemPrompt(relevant),
       user: buildUserPrompt({
         surface: surface as Surface,
@@ -91,6 +94,17 @@ app.post("/generate-reply", async (req, res) => {
         languageHint: language,
       }),
     });
+    if (language === "kk") {
+      const qualityIssues = kazakhQualityIssues(reply);
+      if (qualityIssues.length > 0) {
+        logger.warn("kazakh reply failed quality gate, using fallback", {
+          surface,
+          qualityIssues,
+          replyPreview: reply.slice(0, 160),
+        });
+        reply = KAZAKH_QUALITY_FALLBACK[surface as Surface];
+      }
+    }
     const elapsedMs = Date.now() - started;
     const retrieved = relevant.map((chunk) => ({
       id: chunk.id,
@@ -127,7 +141,8 @@ app.post("/generate-reply", async (req, res) => {
 app.listen(config.port, () => {
   logger.info("model server listening", {
     port: config.port,
-    model: config.openaiModel,
+    provider: config.llmProvider,
+    model: activeChatModel,
     embedModel: config.embedModel,
     chunks: chunks.length,
   });

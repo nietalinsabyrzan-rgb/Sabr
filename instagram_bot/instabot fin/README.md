@@ -10,7 +10,7 @@ Instagram (Meta)
    ▼
 ┌─────────────────────────────┐   internal LAN     ┌────────────────────────────┐
 │  edge/  (DMZ / public)      │ ── /generate-reply ▶│  model-server/ (private)    │
-│  - receive webhook          │ ◀── reply text ──── │  - OpenAI chat + embeddings │
+│  - receive webhook          │ ◀── reply text ──── │  - LLM chat + embeddings    │
 │  - call Instagram Graph API │                     │  - RAG over knowledge.md    │
 └─────────────────────────────┘                     └────────────────────────────┘
 ```
@@ -18,7 +18,7 @@ Instagram (Meta)
 | Service | Role |
 |---|---|
 | `edge/` | Internet-facing. Receives webhooks, queues events, posts replies via `graph.instagram.com`. Holds no model/data beyond operational state in `data/`. |
-| `model-server/` | Private service. OpenAI chat + embeddings with RAG over `model-server/knowledge.md`. One endpoint: `POST /generate-reply {surface, userMessage, username?} -> {reply}`. |
+| `model-server/` | Private service. OpenAI or local Ollama chat + embeddings with RAG over `model-server/knowledge.md`. One endpoint: `POST /generate-reply {surface, userMessage, username?} -> {reply}`. |
 
 ## Install & build
 
@@ -50,11 +50,36 @@ Dev mode: `npm run dev:edge` / `npm run dev:model` (+ ngrok for the webhook call
 - **Token auto-refresh** — the IG long-lived token (~60-day expiry) is refreshed when older than `IG_TOKEN_REFRESH_DAYS` (default 7); the refreshed token persists in `edge/data/ig-token.json`. Refresh failures are logged loudly (`token_refresh_failure` metric) — alert on them.
 - **Audit log** — every inbound message and outbound reply is written to `edge/data/audit/audit-YYYY-MM-DD.jsonl` with sensitive values (ИИН, card numbers, codes) redacted before hitting disk. Files older than `AUDIT_RETENTION_DAYS` (default 90) are pruned daily.
 - **Sensitive data** — if a user sends an ИИН / card number / code, the message is never forwarded to the model; the bot replies with a KZ/RU warning instead.
-- **Endpoints** — both services expose `/healthz` (liveness), `/readyz` (readiness: edge checks the model server; model server checks Ollama + RAG index) and `/metrics` (JSON counters/latencies).
+- **Endpoints** — both services expose `/healthz` (liveness), `/readyz` (readiness: edge checks the model server; model server checks the active LLM provider + RAG index) and `/metrics` (JSON counters/latencies).
 
 ## How replies are generated
 
-`model-server` chunks `knowledge.md` by heading (~1.4KB chunks), embeds them with `EMBED_MODEL` (default `text-embedding-3-small`) via OpenAI, and caches the vectors in `data/rag-cache.json` (keyed by knowledge hash + model; delete nothing, it rebuilds automatically when `knowledge.md` changes). Per request it retrieves the top-`RAG_TOP_K` chunks and sends them with the guardrail system prompt to `OPENAI_MODEL` (default `gpt-4o-mini`).
+`model-server` chunks `knowledge.md` by heading (~1.4KB chunks), embeds them with `EMBED_MODEL`, and caches the vectors in `data/rag-cache.json` (keyed by knowledge hash + provider + model; delete nothing, it rebuilds automatically when `knowledge.md` changes). Per request it retrieves the top-`RAG_TOP_K` chunks and sends them with the guardrail system prompt to the active chat model.
+
+By default it uses OpenAI:
+
+```bash
+LLM_PROVIDER=openai
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
+EMBED_MODEL=text-embedding-3-small
+```
+
+For local no-OpenAI-key mode, run Ollama and use:
+
+```bash
+LLM_PROVIDER=ollama
+OLLAMA_HOST=http://127.0.0.1:11434
+OLLAMA_MODEL=qwen2.5:7b
+EMBED_MODEL=nomic-embed-text
+```
+
+Required local models:
+
+```bash
+ollama pull qwen2.5:7b
+ollama pull nomic-embed-text
+```
 
 Tone, length and guardrails live in `model-server/src/prompt.ts`.
 
@@ -64,7 +89,6 @@ Instagram limits are enforced on the edge: DMs are chunked at 1000 chars, commen
 
 ## Not done yet (intentionally)
 
-- **Webhook signature verification (`X-Hub-Signature-256`)** — pending the information-security review of webhook ingestion. The raw body is already captured (`req.rawBody`) and the TODO is marked in `edge/src/webhook.ts`. **Do not expose `/webhook` to the internet without it.**
 - **Multi-account support** — current code is single-account (`IG_USER_ID`/`IG_ACCESS_TOKEN`); see HANDOFF.md P2.
 - The `/privacy` page was removed — in production the privacy policy is a legal-reviewed page on the bank's website.
 
@@ -77,7 +101,7 @@ This repo includes a root-level `render.yaml` Blueprint for Render. It creates:
 
 Use Render's Blueprint flow and connect this Git repo. Render will ask for secret values marked `sync: false`:
 
-- `OPENAI_API_KEY` on the model service.
+- `OPENAI_API_KEY` on the model service when `LLM_PROVIDER=openai`.
 - `IG_USER_ID`, `IG_ACCESS_TOKEN`, and `IG_WEBHOOK_VERIFY_TOKEN` on the edge service.
 
 After deploy, set the Meta webhook callback URL to:

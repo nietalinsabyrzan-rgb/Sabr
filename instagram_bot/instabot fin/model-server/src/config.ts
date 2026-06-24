@@ -15,6 +15,18 @@ function optional(name: string, fallback: string): string {
   return process.env[name]?.trim() || fallback;
 }
 
+function optionalChoice<T extends string>(
+  name: string,
+  fallback: T,
+  choices: readonly T[],
+): T {
+  const raw = process.env[name]?.trim();
+  if (!raw) return fallback;
+  if ((choices as readonly string[]).includes(raw)) return raw as T;
+  missing.push(`${name} (expected one of: ${choices.join(", ")})`);
+  return fallback;
+}
+
 function optionalNumber(name: string, fallback: number): number {
   const raw = process.env[name]?.trim();
   if (!raw) return fallback;
@@ -26,13 +38,31 @@ function optionalNumber(name: string, fallback: number): number {
   return n;
 }
 
+const llmProvider = optionalChoice("LLM_PROVIDER", "openai", ["openai", "ollama"] as const);
+const openaiApiKey =
+  llmProvider === "openai" ? required("OPENAI_API_KEY") : optional("OPENAI_API_KEY", "");
+const openaiModel = optional("OPENAI_MODEL", "gpt-4o-mini");
+const ollamaModel = optional("OLLAMA_MODEL", "qwen2.5:7b");
+
 export const config = {
   port: optionalNumber("PORT", 8080),
 
+  // LLM provider
+  llmProvider,
+
   // OpenAI
-  openaiApiKey: required("OPENAI_API_KEY"),
-  openaiModel: optional("OPENAI_MODEL", "gpt-4o-mini"),
-  embedModel: optional("EMBED_MODEL", "text-embedding-3-small"),
+  openaiApiKey,
+  openaiModel,
+
+  // Ollama
+  ollamaHost: optional("OLLAMA_HOST", "http://127.0.0.1:11434"),
+  ollamaModel,
+
+  // Embeddings
+  embedModel: optional(
+    "EMBED_MODEL",
+    llmProvider === "ollama" ? "nomic-embed-text" : "text-embedding-3-small",
+  ),
 
   // RAG
   ragChunkSize: optionalNumber("RAG_CHUNK_SIZE", 800),
@@ -47,6 +77,10 @@ export const config = {
   knowledgePath: optional("KNOWLEDGE_PATH", "knowledge.md"),
   dataDir: optional("DATA_DIR", "data"),
 };
+
+export const activeChatModel =
+  config.llmProvider === "ollama" ? config.ollamaModel : config.openaiModel;
+export const embeddingCacheKey = `${config.llmProvider}:${config.embedModel}`;
 
 if (missing.length > 0) {
   console.error(

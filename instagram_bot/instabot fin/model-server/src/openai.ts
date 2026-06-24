@@ -2,8 +2,17 @@ import { config } from "./config.js";
 
 const OPENAI_API = "https://api.openai.com/v1";
 
-// OpenAI chat completion replacing Ollama's native chat endpoint
 export async function chatCompletion(opts: {
+  system: string;
+  user: string;
+}): Promise<string> {
+  if (config.llmProvider === "ollama") {
+    return ollamaChatCompletion(opts);
+  }
+  return openaiChatCompletion(opts);
+}
+
+async function openaiChatCompletion(opts: {
   system: string;
   user: string;
 }): Promise<string> {
@@ -34,8 +43,15 @@ export async function chatCompletion(opts: {
   return data.choices?.[0]?.message?.content?.trim() ?? "";
 }
 
-// OpenAI embeddings replacing Ollama's embed endpoint (batched)
 export async function embedTexts(texts: string[]): Promise<number[][]> {
+  if (texts.length === 0) return [];
+  if (config.llmProvider === "ollama") {
+    return ollamaEmbedTexts(texts);
+  }
+  return openaiEmbedTexts(texts);
+}
+
+async function openaiEmbedTexts(texts: string[]): Promise<number[][]> {
   const res = await fetch(`${OPENAI_API}/embeddings`, {
     method: "POST",
     headers: {
@@ -64,11 +80,87 @@ export async function embedTexts(texts: string[]): Promise<number[][]> {
   return embeddings;
 }
 
-// Health check — verify the OpenAI key works
 export async function ollamaReachable(): Promise<boolean> {
+  if (config.llmProvider === "ollama") {
+    return ollamaReachableNative();
+  }
+  return openaiReachable();
+}
+
+async function openaiReachable(): Promise<boolean> {
   try {
     const res = await fetch(`${OPENAI_API}/models`, {
       headers: { Authorization: `Bearer ${config.openaiApiKey}` },
+      signal: AbortSignal.timeout(5_000),
+    });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+async function ollamaChatCompletion(opts: {
+  system: string;
+  user: string;
+}): Promise<string> {
+  const res = await fetch(`${config.ollamaHost}/api/chat`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: config.ollamaModel,
+      stream: false,
+      messages: [
+        { role: "system", content: opts.system },
+        { role: "user", content: opts.user },
+      ],
+      options: {
+        temperature: config.temperature,
+        num_predict: config.maxTokens,
+      },
+    }),
+    signal: AbortSignal.timeout(config.generateTimeoutMs),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Ollama chat failed ${res.status}: ${text.slice(0, 500)}`);
+  }
+  const data = JSON.parse(text) as {
+    message?: { content?: string };
+    response?: string;
+  };
+  return (data.message?.content ?? data.response ?? "").trim();
+}
+
+async function ollamaEmbedTexts(texts: string[]): Promise<number[][]> {
+  const res = await fetch(`${config.ollamaHost}/api/embed`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: config.embedModel,
+      input: texts,
+    }),
+    signal: AbortSignal.timeout(config.generateTimeoutMs),
+  });
+  const text = await res.text();
+  if (!res.ok) {
+    throw new Error(`Ollama embed failed ${res.status}: ${text.slice(0, 500)}`);
+  }
+  const data = JSON.parse(text) as {
+    embeddings?: number[][];
+    embedding?: number[];
+  };
+  const embeddings = data.embeddings ?? (data.embedding ? [data.embedding] : undefined);
+  if (!embeddings || embeddings.length !== texts.length) {
+    throw new Error(
+      `Ollama embed returned ${embeddings?.length ?? 0} vectors for ${texts.length} inputs`,
+    );
+  }
+  return embeddings;
+}
+
+async function ollamaReachableNative(): Promise<boolean> {
+  try {
+    const res = await fetch(`${config.ollamaHost}/api/tags`, {
       signal: AbortSignal.timeout(5_000),
     });
     return res.ok;
