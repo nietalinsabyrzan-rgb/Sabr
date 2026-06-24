@@ -8,6 +8,8 @@ test("detects Kazakh messages with Kazakh-specific letters", () => {
 
 test("detects Kazakh messages written without every Kazakh-specific letter", () => {
   assert.equal(detectLanguage("Салем, маган депозит жайлы айтып бересиз бе"), "kk");
+  assert.equal(detectLanguage("Салеметсизбе"), "kk");
+  assert.equal(detectLanguage("Саламатсыз ба"), "kk");
   assert.equal(detectLanguage("Отбасы банк шарттары кандай болады"), "kk");
 });
 
