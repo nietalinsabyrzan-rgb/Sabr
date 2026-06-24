@@ -7,6 +7,7 @@ import { dedupStore, auditLog } from "./runtime.js";
 import { RetryQueue } from "./queue.js";
 import { RateLimiter } from "./rate-limit.js";
 import { verifyMetaSignature } from "./signature.js";
+import { DmBatcher } from "./dm-batcher.js";
 import {
   replyToComment,
   sendDirectMessage,
@@ -44,6 +45,8 @@ interface InboundJob {
   username?: string;
   /** set after the inbound audit record is written, so retries don't repeat it */
   audited?: boolean;
+  batchSize?: number;
+  messageIds?: string[];
 }
 
 const queue = new RetryQueue<InboundJob>(processJob, {
@@ -60,9 +63,24 @@ const queue = new RetryQueue<InboundJob>(processJob, {
 });
 const rateLimiter = new RateLimiter(config.rateLimitMaxEvents, config.rateLimitWindowMs);
 setInterval(() => rateLimiter.prune(), config.rateLimitWindowMs).unref();
+const dmBatcher = new DmBatcher(
+  config.dmBatchDelayMs,
+  config.dmBatchMaxMessages,
+  (batch) => {
+    metrics.inc("dm_batches_flushed");
+    metrics.inc("dm_messages_batched", batch.messageIds.length);
+    queue.push({
+      surface: "dm",
+      targetId: batch.senderId,
+      text: batch.text,
+      batchSize: batch.messageIds.length,
+      messageIds: batch.messageIds,
+    });
+  },
+);
 
 export function queueDepth(): number {
-  return queue.pending;
+  return queue.pending + dmBatcher.pendingConversations;
 }
 
 export async function handleEvent(req: Request, res: Response) {
@@ -151,11 +169,8 @@ function enqueueMessage(event: MessagingEvent) {
     metrics.inc("events_deduplicated");
     return;
   }
-  queue.push({
-    surface: "dm",
-    targetId: event.sender.id,
-    text: msg.text,
-  });
+  dmBatcher.add(event.sender.id, msg.mid, msg.text);
+  metrics.inc("dm_messages_buffered");
 }
 
 async function processJob(job: InboundJob) {
@@ -174,6 +189,7 @@ async function processJob(job: InboundJob) {
       username: job.username,
       text,
       language,
+      ...(job.batchSize ? { flag: `batched:${job.batchSize}` } : {}),
       ...(containsSensitive(text) ? { flag: "sensitive" } : {}),
     });
     job.audited = true;
