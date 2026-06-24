@@ -15,6 +15,7 @@ import {
 } from "./prompt.js";
 import { detectLanguage, type Lang } from "./language.js";
 import { KAZAKH_QUALITY_FALLBACK, kazakhQualityIssues } from "./reply-quality.js";
+import { GREETING_REPLY, isGreetingOnly } from "./simple-replies.js";
 
 const knowledge = readFileSync(config.knowledgePath, "utf8");
 const chunks = chunkKnowledge(knowledge, config.ragChunkSize, config.ragChunkOverlap);
@@ -84,6 +85,30 @@ app.post("/generate-reply", async (req, res) => {
   const started = Date.now();
   try {
     const language = (languageHint ?? detectLanguage(userMessage)) as Lang;
+    if (isGreetingOnly(userMessage)) {
+      const elapsedMs = Date.now() - started;
+      const reply = GREETING_REPLY[language][surface as Surface];
+      metrics.inc("replies_generated");
+      metrics.inc(`replies_generated_${language}`);
+      metrics.inc("simple_greeting_replies");
+      metrics.observeLatency("generate_ms", elapsedMs);
+      logger.info("simple greeting reply generated", {
+        surface,
+        language,
+        elapsedMs,
+        replyChars: reply.length,
+      });
+      res.json({
+        reply,
+        meta: {
+          language,
+          elapsedMs,
+          retrieved: [],
+          simpleReply: "greeting",
+        },
+      });
+      return;
+    }
     const relevant = await index.retrieve(userMessage, config.ragTopK);
     let reply = await chatCompletion({
       system: buildSystemPrompt(relevant),

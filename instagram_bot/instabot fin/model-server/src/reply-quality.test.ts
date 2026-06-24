@@ -20,3 +20,10 @@ test("rejects broken mixed-script Kazakh words", () => {
   const issues = kazakhQualityIssues("Сәlemетсіз бе! Депозит ашуға болады.");
   assert.match(issues.join("\n"), /unexpected latin words/);
 });
+
+test("rejects Russian legal-family words leaked into Kazakh replies", () => {
+  const issues = kazakhQualityIssues(
+    "Сәлем! Бұл программа супруг және несовершеннолеттең балалар арқылы қолданылады. Деталей туралы 1432 арқылы нақтылаңыз.",
+  );
+  assert.match(issues.join("\n"), /russian words/);
+});
