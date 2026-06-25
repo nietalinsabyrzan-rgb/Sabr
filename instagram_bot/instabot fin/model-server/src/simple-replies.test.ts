@@ -24,10 +24,12 @@ test("detects Russian-only greetings", () => {
 
 test("detects Kazakh-only greetings", () => {
   assert.equal(isGreetingOnly("Сәлем"), true);
+  assert.equal(isGreetingOnly("Сәлембердік"), true);
   assert.equal(isGreetingOnly("Салам"), true);
   assert.equal(isGreetingOnly("Сәлеметсіз бе"), true);
   assert.equal(isGreetingOnly("Сәлеметсізбе"), true);
   assert.equal(isGreetingOnly("Салем"), true);
+  assert.equal(isGreetingOnly("Салембердик"), true);
   assert.equal(isGreetingOnly("Салеметсизбе"), true);
   assert.equal(isGreetingOnly("Салеметсизба"), true);
   assert.equal(isGreetingOnly("Салеметсиз бе"), true);
