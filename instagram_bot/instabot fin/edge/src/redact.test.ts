@@ -35,6 +35,13 @@ test("containsSensitive flags ИИН and cards", () => {
   assert.equal(containsSensitive("какая ставка по депозиту?"), false);
 });
 
+test("containsSensitive flags phones and passwords", () => {
+  assert.equal(containsSensitive("мой телефон +7 701 123 45 67"), true);
+  assert.equal(containsSensitive("пароль: qwerty123"), true);
+  assert.match(redactSensitive("телефон +7 701 123 45 67"), /\[PHONE-REDACTED\]/);
+  assert.match(redactSensitive("password secret123"), /\[SECRET-REDACTED\]/);
+});
+
 test("containsSensitive is stable across repeated calls", () => {
   // Guards against /g lastIndex state leaking between calls.
   for (let i = 0; i < 3; i++) {

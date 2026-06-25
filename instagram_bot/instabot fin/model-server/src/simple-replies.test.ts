@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { isGreetingOnly } from "./simple-replies.js";
+import { GREETING_REPLY, isGreetingOnly } from "./simple-replies.js";
 
 test("detects Russian-only greetings", () => {
   assert.equal(isGreetingOnly("привет"), true);
@@ -53,4 +53,10 @@ test("does not treat real questions as greetings", () => {
   assert.equal(isGreetingOnly("Салам, кредит қанша береді?"), false);
   assert.equal(isGreetingOnly("привет сколько максимум кредит"), false);
   assert.equal(isGreetingOnly("добрый день какие условия депозита"), false);
+});
+
+test("DM greeting suggests common topics", () => {
+  assert.match(GREETING_REPLY.ru.dm, /депозит/);
+  assert.match(GREETING_REPLY.ru.dm, /ипотека/);
+  assert.match(GREETING_REPLY.kk.dm, /әскери бағдарлама/);
 });

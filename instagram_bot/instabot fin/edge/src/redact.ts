@@ -10,11 +10,16 @@ const IIN_RE = /\b\d{12}\b/g;
 // \b is ASCII-only in JS, so Unicode lookarounds delimit the Cyrillic keywords.
 const CODE_RE =
   /(?<![\p{L}\d])(код|кодты|code|otp|смс|sms|cvv|cvc|пароль|парол|құпия\s*сөз)(?!\p{L})\D{0,15}\d{3,8}\b/giu;
+const PHONE_RE = /(?:\+?7|8)[ -]?\(?7\d{2}\)?(?:[ -]?\d){7}\b/g;
+const PASSWORD_RE =
+  /(?<![\p{L}\d])(пароль|парол|password|pass|құпия\s*сөз)(?!\p{L})\s*[:=]?\s*[^\s,.;!?]{4,}/giu;
 
 export function redactSensitive(text: string): string {
   return text
     .replace(CARD_RE, "[CARD-REDACTED]")
     .replace(IIN_RE, "[IIN-REDACTED]")
+    .replace(PHONE_RE, "[PHONE-REDACTED]")
+    .replace(PASSWORD_RE, "$1 [SECRET-REDACTED]")
     .replace(CODE_RE, (m) => m.replace(/\d/g, "*"));
 }
 
@@ -23,6 +28,8 @@ export function containsSensitive(text: string): boolean {
   return (
     new RegExp(CARD_RE.source).test(text) ||
     new RegExp(IIN_RE.source).test(text) ||
+    new RegExp(PHONE_RE.source).test(text) ||
+    new RegExp(PASSWORD_RE.source, "iu").test(text) ||
     new RegExp(CODE_RE.source, "iu").test(text)
   );
 }
@@ -84,6 +91,6 @@ export function detectLanguage(text: string): Lang {
 }
 
 export const SENSITIVE_WARNING: Record<Lang, string> = {
-  ru: "Пожалуйста, не отправляйте персональные данные (ИИН, номер карты, СМС-коды, пароли) в Instagram — мы никогда их не запрашиваем. Если вы уже отправили такие данные кому-либо, обратитесь в контакт-центр 1432.",
-  kk: "Өтінеміз, Instagram-да жеке деректеріңізді (ЖСН, карта нөмірі, СМС-кодтар, құпиясөздер) жібермеңіз — біз оларды ешқашан сұрамаймыз. Егер мұндай деректерді біреуге жіберіп қойсаңыз, 1432 байланыс орталығына хабарласыңыз.",
+  ru: "Пожалуйста, не отправляйте персональные данные (ИИН, телефон, номер карты, СМС-коды, пароли) в Instagram — мы никогда их не запрашиваем. Если вы уже отправили такие данные кому-либо, обратитесь в контакт-центр 1432.",
+  kk: "Өтінеміз, Instagram-да жеке деректеріңізді (ЖСН, телефон, карта нөмірі, СМС-кодтар, құпиясөздер) жібермеңіз — біз оларды ешқашан сұрамаймыз. Егер мұндай деректерді біреуге жіберіп қойсаңыз, 1432 байланыс орталығына хабарласыңыз.",
 };

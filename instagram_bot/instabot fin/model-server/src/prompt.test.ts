@@ -21,3 +21,13 @@ test("language hint overrides ambiguous wording", () => {
 
   assert.match(prompt, /МІНДЕТТІ ТАЛАП: жауапты толық қазақша жаз/);
 });
+
+test("DM prompt asks for compact Instagram replies", () => {
+  const prompt = buildUserPrompt({
+    surface: "dm",
+    userMessage: "какие условия по ипотеке?",
+  });
+
+  assert.match(prompt, /до ~650 символов/);
+  assert.match(prompt, /Без воды/);
+});

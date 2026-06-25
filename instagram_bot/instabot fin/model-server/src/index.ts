@@ -17,6 +17,7 @@ import { detectLanguage, type Lang } from "./language.js";
 import { KAZAKH_QUALITY_FALLBACK, kazakhQualityIssues } from "./reply-quality.js";
 import { GREETING_REPLY, isGreetingOnly } from "./simple-replies.js";
 import { CLARIFY_REPLY, shouldAskClarifyingQuestion } from "./clarify.js";
+import { compactReply } from "./response-shape.js";
 
 const knowledge = readFileSync(config.knowledgePath, "utf8");
 const chunks = chunkKnowledge(knowledge, config.ragChunkSize, config.ragChunkOverlap);
@@ -169,26 +170,57 @@ app.post("/generate-reply", async (req, res) => {
     }
 
     const relevant = scoredRelevant.map(({ chunk }) => chunk);
+    const typedSurface = surface as Surface;
     let reply = await chatCompletion({
       system: buildSystemPrompt(relevant),
       user: buildUserPrompt({
-        surface: surface as Surface,
+        surface: typedSurface,
         userMessage,
         username,
         languageHint: language,
       }),
     });
+    let qualityIssues: string[] = [];
     if (language === "kk") {
-      const qualityIssues = kazakhQualityIssues(reply);
+      qualityIssues = kazakhQualityIssues(reply);
       if (qualityIssues.length > 0) {
-        logger.warn("kazakh reply failed quality gate, using fallback", {
+        logger.warn("kazakh reply failed quality gate, retrying once", {
           surface,
           qualityIssues,
           replyPreview: reply.slice(0, 160),
         });
-        reply = KAZAKH_QUALITY_FALLBACK[surface as Surface];
+        const retry = await chatCompletion({
+          system: buildSystemPrompt(relevant),
+          user: [
+            buildUserPrompt({
+              surface: typedSurface,
+              userMessage,
+              username,
+              languageHint: language,
+            }),
+            "",
+            "Алдыңғы жауап жарамсыз болды: орысша сөздер немесе түсініксіз аралас тіл қолданылды.",
+            "Жауапты қайта жаз: тек қазақша, 2–3 қысқа сөйлем, тек берілген үзінділердегі факт бойынша. Егер нақты жауап жоқ болса, қысқа нақтылау сұра.",
+          ].join("\n"),
+        });
+        const retryIssues = kazakhQualityIssues(retry);
+        if (retryIssues.length === 0) {
+          reply = retry;
+          qualityIssues = [];
+          metrics.inc("kazakh_quality_retries_recovered");
+        } else {
+          logger.warn("kazakh reply retry failed quality gate, using fallback", {
+            surface,
+            retryIssues,
+            replyPreview: retry.slice(0, 160),
+          });
+          reply = KAZAKH_QUALITY_FALLBACK[typedSurface];
+          qualityIssues = retryIssues;
+          metrics.inc("kazakh_quality_fallbacks");
+        }
       }
     }
+    reply = compactReply(reply || FALLBACK_REPLY[language][typedSurface], typedSurface);
     const elapsedMs = Date.now() - started;
     const retrieved = relevant.map((chunk) => ({
       id: chunk.id,
@@ -207,13 +239,12 @@ app.post("/generate-reply", async (req, res) => {
       retrieved,
     });
     res.json({
-      reply:
-        reply ||
-        FALLBACK_REPLY[language][surface as Surface],
+      reply,
       meta: {
         language,
         elapsedMs,
         retrieved,
+        ...(qualityIssues.length > 0 ? { qualityIssues } : {}),
       },
     });
   } catch (err) {
