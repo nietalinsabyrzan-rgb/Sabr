@@ -47,6 +47,7 @@ const KK_WORDS = new Set([
   "саламатсыз",
   "саламатсызба",
   "саламатсызбе",
+  "саламатпысыз",
   "салематсыз",
   "салематсызба",
   "салематсызбе",
@@ -84,7 +85,7 @@ export function detectLanguage(text: string): Lang {
   let ruScore = RU_CHARS.test(normalized) ? 1 : 0;
 
   for (const word of normalized.match(/[\p{L}]+/gu) ?? []) {
-    if (KK_WORDS.has(word)) kkScore += 1;
+    if (KK_WORDS.has(word)) kkScore += 2;
     if (RU_WORDS.has(word)) ruScore += 1;
   }
 

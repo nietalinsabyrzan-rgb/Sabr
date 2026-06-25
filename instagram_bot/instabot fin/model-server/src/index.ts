@@ -16,6 +16,7 @@ import {
 import { detectLanguage, type Lang } from "./language.js";
 import { KAZAKH_QUALITY_FALLBACK, kazakhQualityIssues } from "./reply-quality.js";
 import { GREETING_REPLY, isGreetingOnly } from "./simple-replies.js";
+import { CLARIFY_REPLY, shouldAskClarifyingQuestion } from "./clarify.js";
 
 const knowledge = readFileSync(config.knowledgePath, "utf8");
 const chunks = chunkKnowledge(knowledge, config.ragChunkSize, config.ragChunkOverlap);
@@ -109,7 +110,65 @@ app.post("/generate-reply", async (req, res) => {
       });
       return;
     }
-    const relevant = await index.retrieve(userMessage, config.ragTopK);
+    if (shouldAskClarifyingQuestion(userMessage)) {
+      const elapsedMs = Date.now() - started;
+      const reply = CLARIFY_REPLY[language][surface as Surface];
+      metrics.inc("clarifying_replies");
+      metrics.inc(`clarifying_replies_${language}`);
+      metrics.observeLatency("generate_ms", elapsedMs);
+      logger.info("clarifying reply generated before retrieval", {
+        surface,
+        language,
+        elapsedMs,
+        replyChars: reply.length,
+      });
+      res.json({
+        reply,
+        meta: {
+          language,
+          elapsedMs,
+          retrieved: [],
+          simpleReply: "clarify",
+        },
+      });
+      return;
+    }
+
+    const scoredRelevant = await index.retrieveScored(userMessage, config.ragTopK);
+    const topScore = scoredRelevant[0]?.score ?? 0;
+    if (topScore < config.ragMinScore) {
+      const elapsedMs = Date.now() - started;
+      const reply = CLARIFY_REPLY[language][surface as Surface];
+      metrics.inc("clarifying_replies");
+      metrics.inc(`clarifying_replies_${language}`);
+      metrics.inc("clarifying_replies_low_rag_score");
+      metrics.observeLatency("generate_ms", elapsedMs);
+      logger.info("clarifying reply generated after low retrieval score", {
+        surface,
+        language,
+        elapsedMs,
+        topScore,
+        minScore: config.ragMinScore,
+        replyChars: reply.length,
+      });
+      res.json({
+        reply,
+        meta: {
+          language,
+          elapsedMs,
+          retrieved: scoredRelevant.map(({ chunk, score }) => ({
+            id: chunk.id,
+            heading: chunk.heading,
+            score,
+          })),
+          simpleReply: "clarify",
+          topScore,
+        },
+      });
+      return;
+    }
+
+    const relevant = scoredRelevant.map(({ chunk }) => chunk);
     let reply = await chatCompletion({
       system: buildSystemPrompt(relevant),
       user: buildUserPrompt({
@@ -134,6 +193,7 @@ app.post("/generate-reply", async (req, res) => {
     const retrieved = relevant.map((chunk) => ({
       id: chunk.id,
       heading: chunk.heading,
+      score: scoredRelevant.find(({ chunk: scoredChunk }) => scoredChunk.id === chunk.id)?.score,
     }));
 
     metrics.inc("replies_generated");

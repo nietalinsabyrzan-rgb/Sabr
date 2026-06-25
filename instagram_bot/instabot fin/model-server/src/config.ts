@@ -68,6 +68,7 @@ export const config = {
   ragChunkSize: optionalNumber("RAG_CHUNK_SIZE", 800),
   ragChunkOverlap: optionalNumber("RAG_CHUNK_OVERLAP", 100),
   ragTopK: optionalNumber("RAG_TOP_K", 5),
+  ragMinScore: optionalNumber("RAG_MIN_SCORE", 0.18),
 
   // Generation params
   maxTokens: optionalNumber("MAX_TOKENS", 512),

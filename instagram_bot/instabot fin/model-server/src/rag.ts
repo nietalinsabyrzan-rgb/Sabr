@@ -10,6 +10,11 @@ export interface Chunk {
   text: string;
 }
 
+export interface ScoredChunk {
+  chunk: Chunk;
+  score: number;
+}
+
 interface Section {
   heading: string;
   lines: string[];
@@ -172,13 +177,17 @@ export class RagIndex {
   }
 
   async retrieve(query: string, k: number): Promise<Chunk[]> {
+    return (await this.retrieveScored(query, k)).map(({ chunk }) => chunk);
+  }
+
+  async retrieveScored(query: string, k: number): Promise<ScoredChunk[]> {
     if (!this.ready) throw new Error("rag index not built yet");
     const [qv] = await this.embed([query]);
     return this.vectors
       .map((v, i) => ({ i, score: cosine(qv, v) }))
       .sort((a, b) => b.score - a.score)
       .slice(0, k)
-      .map(({ i }) => this.chunks[i]);
+      .map(({ i, score }) => ({ chunk: this.chunks[i], score }));
   }
 }
 
