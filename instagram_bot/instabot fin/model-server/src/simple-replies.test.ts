@@ -5,6 +5,7 @@ import { isGreetingOnly } from "./simple-replies.js";
 test("detects Russian-only greetings", () => {
   assert.equal(isGreetingOnly("привет"), true);
   assert.equal(isGreetingOnly("Здравствуйте!"), true);
+  assert.equal(isGreetingOnly("Здравия желаю"), true);
   assert.equal(isGreetingOnly("Добрый день"), true);
   assert.equal(isGreetingOnly("добрый вчер"), true);
   assert.equal(isGreetingOnly("доброго времени дня"), true);
