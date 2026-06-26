@@ -211,6 +211,7 @@ async function processJob(job: InboundJob) {
   const language = detectLanguage(text);
   let modelInputText = text;
   let usedConversationContext = false;
+  let botKind: "reply" | "clarify" | "handoff" = "reply";
   const limit = rateLimiter.check(`${job.surface}:${job.targetId}`);
   if (!limit.allowed) {
     metrics.inc("events_rate_limited");
@@ -250,6 +251,17 @@ async function processJob(job: InboundJob) {
       languageHint: language,
     });
     reply = result.reply;
+    if (result.meta?.simpleReply === "clarify") {
+      const previousClarifies =
+        job.surface === "dm" ? conversationMemory.recentBotKindCount(job.targetId, "clarify") : 0;
+      if (previousClarifies >= 2) {
+        metrics.inc("clarify_loop_handoffs");
+        botKind = "handoff";
+        reply = CLARIFY_LOOP_REPLY[language];
+      } else {
+        botKind = "clarify";
+      }
+    }
   }
 
   if (job.surface === "comment") {
@@ -271,7 +283,7 @@ async function processJob(job: InboundJob) {
     });
   }
   if (job.surface === "dm" && limit.allowed && !containsSensitive(text)) {
-    conversationMemory.remember(job.targetId, text, reply);
+    conversationMemory.remember(job.targetId, text, reply, botKind);
   }
   metrics.inc(`replies_sent_${job.surface}`);
   logger.info("reply sent", {
@@ -287,4 +299,9 @@ async function processJob(job: InboundJob) {
 const RATE_LIMIT_REPLY = {
   ru: "Получили несколько сообщений подряд. Пожалуйста, подождите немного — я отвечу на следующий вопрос чуть позже.",
   kk: "Қатарынан бірнеше хабарлама келді. Өтінеміз, сәл күтіңіз — келесі сұрағыңызға біраздан кейін жауап беремін.",
+};
+
+const CLARIFY_LOOP_REPLY = {
+  ru: "Похоже, я всё ещё не понимаю вопрос точно. Лучше уточните по номеру 1432 или на hcsbk.kz, чтобы не дать неверный ответ.",
+  kk: "Сұрақты әлі нақты түсінбей тұрмын. Қате жауап бермеу үшін 1432 нөмірі немесе hcsbk.kz арқылы нақтылаған дұрыс.",
 };

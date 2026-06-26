@@ -18,6 +18,7 @@ import { KAZAKH_QUALITY_FALLBACK, kazakhQualityIssues } from "./reply-quality.js
 import { GREETING_REPLY, isGreetingOnly } from "./simple-replies.js";
 import { CLARIFY_REPLY, shouldAskClarifyingQuestion } from "./clarify.js";
 import { compactReply } from "./response-shape.js";
+import { matchFaqOverride } from "./faq-overrides.js";
 
 const knowledge = readFileSync(config.knowledgePath, "utf8");
 const chunks = chunkKnowledge(knowledge, config.ragChunkSize, config.ragChunkOverlap);
@@ -107,6 +108,33 @@ app.post("/generate-reply", async (req, res) => {
           elapsedMs,
           retrieved: [],
           simpleReply: "greeting",
+        },
+      });
+      return;
+    }
+    const faq = matchFaqOverride(userMessage, language, surface as Surface);
+    if (faq) {
+      const elapsedMs = Date.now() - started;
+      metrics.inc("replies_generated");
+      metrics.inc(`replies_generated_${language}`);
+      metrics.inc("faq_override_replies");
+      metrics.inc(`faq_override_${faq.id}`);
+      metrics.observeLatency("generate_ms", elapsedMs);
+      logger.info("FAQ override reply generated", {
+        surface,
+        language,
+        faqId: faq.id,
+        elapsedMs,
+        replyChars: faq.reply.length,
+      });
+      res.json({
+        reply: faq.reply,
+        meta: {
+          language,
+          elapsedMs,
+          retrieved: [],
+          simpleReply: "faq",
+          faqId: faq.id,
         },
       });
       return;

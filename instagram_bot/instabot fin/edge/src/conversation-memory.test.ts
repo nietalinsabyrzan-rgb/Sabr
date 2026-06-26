@@ -70,3 +70,24 @@ test("persists redacted memory and loads it after restart", () => {
   assert.equal(result.usedContext, true);
   assert.match(result.text, /\[PHONE-REDACTED\]/);
 });
+
+test("counts consecutive clarify replies", () => {
+  const memory = new ConversationMemory(60_000);
+  memory.remember("u1", "непонятно", "уточните вопрос", "clarify");
+  memory.remember("u1", "ок", "уточните вопрос", "clarify");
+
+  assert.equal(memory.recentBotKindCount("u1", "clarify"), 2);
+
+  memory.remember("u1", "ипотека", "ответ по ипотеке", "reply");
+  assert.equal(memory.recentBotKindCount("u1", "clarify"), 0);
+});
+
+test("persists bot kind", () => {
+  const dir = mkdtempSync(join(tmpdir(), "conversation-memory-kind-"));
+  const file = join(dir, "memory.json");
+  const first = new ConversationMemory(60_000, 5, file);
+  first.remember("u1", "не понял", "уточните", "clarify");
+
+  const second = new ConversationMemory(60_000, 5, file);
+  assert.equal(second.recentBotKindCount("u1", "clarify"), 1);
+});

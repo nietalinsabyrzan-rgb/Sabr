@@ -27,6 +27,7 @@ const DEPENDENT_WORDS = new Set([
 export interface ConversationTurn {
   userText: string;
   botReply: string;
+  botKind?: "reply" | "clarify" | "handoff";
   ts: number;
 }
 
@@ -42,11 +43,17 @@ export class ConversationMemory {
     this.load();
   }
 
-  remember(peerId: string, userText: string, botReply: string) {
+  remember(
+    peerId: string,
+    userText: string,
+    botReply: string,
+    botKind: ConversationTurn["botKind"] = "reply",
+  ) {
     const history = this.activeHistory(peerId);
     history.push({
       userText: redactSensitive(userText).trim(),
       botReply: redactSensitive(botReply).trim(),
+      botKind,
       ts: this.now(),
     });
     this.histories.set(peerId, history.slice(-this.maxTurns));
@@ -90,6 +97,16 @@ export class ConversationMemory {
     return this.histories.size;
   }
 
+  recentBotKindCount(peerId: string, botKind: ConversationTurn["botKind"]): number {
+    let count = 0;
+    const history = this.activeHistory(peerId);
+    for (let i = history.length - 1; i >= 0; i--) {
+      if (history[i].botKind !== botKind) break;
+      count++;
+    }
+    return count;
+  }
+
   private activeHistory(peerId: string): ConversationTurn[] {
     const now = this.now();
     const history = (this.histories.get(peerId) ?? []).filter(
@@ -113,6 +130,7 @@ export class ConversationMemory {
           .map((turn) => ({
             userText: redactSensitive(turn.userText).trim(),
             botReply: redactSensitive(turn.botReply).trim(),
+            botKind: turn.botKind,
             ts: turn.ts,
           }))
           .slice(-this.maxTurns);

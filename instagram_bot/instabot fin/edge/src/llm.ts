@@ -9,6 +9,8 @@ export interface GenerateReplyResult {
     language: Lang;
     elapsedMs: number;
     retrieved: Array<{ id: number; heading: string }>;
+    simpleReply?: "greeting" | "clarify" | "faq";
+    faqId?: string;
   };
 }
 
