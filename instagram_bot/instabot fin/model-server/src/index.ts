@@ -19,6 +19,7 @@ import { GREETING_REPLY, isGreetingOnly } from "./simple-replies.js";
 import { CLARIFY_REPLY, shouldAskClarifyingQuestion } from "./clarify.js";
 import { compactReply } from "./response-shape.js";
 import { matchFaqOverride } from "./faq-overrides.js";
+import { latestClientMessage } from "./routing-text.js";
 
 const knowledge = readFileSync(config.knowledgePath, "utf8");
 const chunks = chunkKnowledge(knowledge, config.ragChunkSize, config.ragChunkOverlap);
@@ -87,8 +88,9 @@ app.post("/generate-reply", async (req, res) => {
 
   const started = Date.now();
   try {
-    const language = (languageHint ?? detectLanguage(userMessage)) as Lang;
-    if (isGreetingOnly(userMessage)) {
+    const routingMessage = latestClientMessage(userMessage);
+    const language = (languageHint ?? detectLanguage(routingMessage)) as Lang;
+    if (isGreetingOnly(routingMessage)) {
       const elapsedMs = Date.now() - started;
       const reply = GREETING_REPLY[language][surface as Surface];
       metrics.inc("replies_generated");
@@ -112,7 +114,7 @@ app.post("/generate-reply", async (req, res) => {
       });
       return;
     }
-    const faq = matchFaqOverride(userMessage, language, surface as Surface);
+    const faq = matchFaqOverride(routingMessage, language, surface as Surface);
     if (faq) {
       const elapsedMs = Date.now() - started;
       metrics.inc("replies_generated");
