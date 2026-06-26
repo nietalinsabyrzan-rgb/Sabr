@@ -64,7 +64,8 @@ export const config = {
   rateLimitWindowMs: optionalNumber("RATE_LIMIT_WINDOW_MS", 10 * 60_000),
   dmBatchDelayMs: optionalNumber("DM_BATCH_DELAY_MS", 12_000),
   dmBatchMaxMessages: optionalNumber("DM_BATCH_MAX_MESSAGES", 6),
-  conversationMemoryTtlMs: optionalNumber("CONVERSATION_MEMORY_TTL_MS", 30 * 60_000),
+  conversationMemoryTtlMs: optionalNumber("CONVERSATION_MEMORY_TTL_MS", 24 * 60 * 60_000),
+  conversationMemoryMaxTurns: optionalNumber("CONVERSATION_MEMORY_MAX_TURNS", 5),
 };
 
 function normalizeUrl(value: string): string {

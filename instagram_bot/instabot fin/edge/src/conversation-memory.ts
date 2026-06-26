@@ -1,3 +1,7 @@
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+import { redactSensitive } from "./redact.js";
+
 const DEPENDENT_WORDS = new Set([
   "да",
   "нет",
@@ -27,33 +31,42 @@ export interface ConversationTurn {
 }
 
 export class ConversationMemory {
-  private turns = new Map<string, ConversationTurn>();
+  private histories = new Map<string, ConversationTurn[]>();
 
   constructor(
     private ttlMs: number,
+    private maxTurns = 5,
+    private filePath?: string,
     private now: () => number = () => Date.now(),
-  ) {}
+  ) {
+    this.load();
+  }
 
   remember(peerId: string, userText: string, botReply: string) {
-    this.turns.set(peerId, {
-      userText: userText.trim(),
-      botReply: botReply.trim(),
+    const history = this.activeHistory(peerId);
+    history.push({
+      userText: redactSensitive(userText).trim(),
+      botReply: redactSensitive(botReply).trim(),
       ts: this.now(),
     });
+    this.histories.set(peerId, history.slice(-this.maxTurns));
+    this.save();
   }
 
   augmentIfDependent(peerId: string, text: string): { text: string; usedContext: boolean } {
-    const turn = this.turns.get(peerId);
-    if (!turn || this.now() - turn.ts > this.ttlMs || !isDependentFollowUp(text)) {
+    const history = this.activeHistory(peerId);
+    if (history.length === 0 || !isDependentFollowUp(text)) {
       return { text, usedContext: false };
     }
 
     return {
       usedContext: true,
       text: [
-        "Контекст предыдущего сообщения в этом Direct:",
-        `Клиент раньше писал: "${turn.userText}"`,
-        `Бот ответил: "${turn.botReply}"`,
+        "Контекст последних сообщений в этом Direct:",
+        ...history.flatMap((turn, index) => [
+          `${index + 1}. Клиент: "${turn.userText}"`,
+          `   Бот: "${turn.botReply}"`,
+        ]),
         "",
         "Новое короткое сообщение клиента:",
         `"${text}"`,
@@ -65,14 +78,71 @@ export class ConversationMemory {
 
   prune() {
     const now = this.now();
-    for (const [peerId, turn] of this.turns) {
-      if (now - turn.ts > this.ttlMs) this.turns.delete(peerId);
+    for (const [peerId, history] of this.histories) {
+      const active = history.filter((turn) => now - turn.ts <= this.ttlMs);
+      if (active.length === 0) this.histories.delete(peerId);
+      else this.histories.set(peerId, active.slice(-this.maxTurns));
     }
+    this.save();
   }
 
   get size(): number {
-    return this.turns.size;
+    return this.histories.size;
   }
+
+  private activeHistory(peerId: string): ConversationTurn[] {
+    const now = this.now();
+    const history = (this.histories.get(peerId) ?? []).filter(
+      (turn) => now - turn.ts <= this.ttlMs,
+    );
+    if (history.length === 0) this.histories.delete(peerId);
+    else this.histories.set(peerId, history.slice(-this.maxTurns));
+    return history.slice(-this.maxTurns);
+  }
+
+  private load() {
+    if (!this.filePath || !existsSync(this.filePath)) return;
+    try {
+      const raw = JSON.parse(readFileSync(this.filePath, "utf8")) as unknown;
+      if (!raw || typeof raw !== "object") return;
+      const entries = Object.entries(raw as Record<string, unknown>);
+      for (const [peerId, value] of entries) {
+        if (!Array.isArray(value)) continue;
+        const turns = value
+          .filter(isConversationTurn)
+          .map((turn) => ({
+            userText: redactSensitive(turn.userText).trim(),
+            botReply: redactSensitive(turn.botReply).trim(),
+            ts: turn.ts,
+          }))
+          .slice(-this.maxTurns);
+        if (turns.length > 0) this.histories.set(peerId, turns);
+      }
+      this.prune();
+    } catch {
+      this.histories.clear();
+    }
+  }
+
+  private save() {
+    if (!this.filePath) return;
+    mkdirSync(dirname(this.filePath), { recursive: true });
+    const payload: Record<string, ConversationTurn[]> = {};
+    for (const [peerId, history] of this.histories) {
+      payload[peerId] = history.slice(-this.maxTurns);
+    }
+    writeFileSync(this.filePath, JSON.stringify(payload, null, 2));
+  }
+}
+
+function isConversationTurn(value: unknown): value is ConversationTurn {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as ConversationTurn).userText === "string" &&
+    typeof (value as ConversationTurn).botReply === "string" &&
+    typeof (value as ConversationTurn).ts === "number"
+  );
 }
 
 export function isDependentFollowUp(text: string): boolean {

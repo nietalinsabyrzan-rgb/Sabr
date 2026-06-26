@@ -64,8 +64,15 @@ const queue = new RetryQueue<InboundJob>(processJob, {
 });
 const rateLimiter = new RateLimiter(config.rateLimitMaxEvents, config.rateLimitWindowMs);
 setInterval(() => rateLimiter.prune(), config.rateLimitWindowMs).unref();
-const conversationMemory = new ConversationMemory(config.conversationMemoryTtlMs);
-setInterval(() => conversationMemory.prune(), Math.min(config.conversationMemoryTtlMs, 10 * 60_000)).unref();
+const conversationMemory = new ConversationMemory(
+  config.conversationMemoryTtlMs,
+  config.conversationMemoryMaxTurns,
+  join(config.dataDir, "conversation-memory.json"),
+);
+setInterval(
+  () => conversationMemory.prune(),
+  Math.min(config.conversationMemoryTtlMs, 10 * 60_000),
+).unref();
 const dmBatcher = new DmBatcher(
   config.dmBatchDelayMs,
   config.dmBatchMaxMessages,
