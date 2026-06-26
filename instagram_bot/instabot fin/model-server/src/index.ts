@@ -15,7 +15,7 @@ import {
 } from "./prompt.js";
 import { detectLanguage, type Lang } from "./language.js";
 import { KAZAKH_QUALITY_FALLBACK, kazakhQualityIssues } from "./reply-quality.js";
-import { GREETING_REPLY, isGreetingOnly } from "./simple-replies.js";
+import { GREETING_REPLY, isGreetingOnly, questionTextAfterGreeting } from "./simple-replies.js";
 import { CLARIFY_REPLY, shouldAskClarifyingQuestion } from "./clarify.js";
 import { compactReply } from "./response-shape.js";
 import { matchFaqOverride } from "./faq-overrides.js";
@@ -89,6 +89,7 @@ app.post("/generate-reply", async (req, res) => {
   const started = Date.now();
   try {
     const routingMessage = latestClientMessage(userMessage);
+    const questionMessage = questionTextAfterGreeting(routingMessage);
     const language = (languageHint ?? detectLanguage(routingMessage)) as Lang;
     if (isGreetingOnly(routingMessage)) {
       const elapsedMs = Date.now() - started;
@@ -114,7 +115,7 @@ app.post("/generate-reply", async (req, res) => {
       });
       return;
     }
-    const faq = matchFaqOverride(routingMessage, language, surface as Surface);
+    const faq = matchFaqOverride(questionMessage, language, surface as Surface);
     if (faq) {
       const elapsedMs = Date.now() - started;
       metrics.inc("replies_generated");
@@ -141,7 +142,7 @@ app.post("/generate-reply", async (req, res) => {
       });
       return;
     }
-    if (shouldAskClarifyingQuestion(userMessage)) {
+    if (shouldAskClarifyingQuestion(questionMessage)) {
       const elapsedMs = Date.now() - started;
       const reply = CLARIFY_REPLY[language][surface as Surface];
       metrics.inc("clarifying_replies");
@@ -165,7 +166,7 @@ app.post("/generate-reply", async (req, res) => {
       return;
     }
 
-    const scoredRelevant = await index.retrieveScored(userMessage, config.ragTopK);
+    const scoredRelevant = await index.retrieveScored(questionMessage, config.ragTopK);
     const topScore = scoredRelevant[0]?.score ?? 0;
     if (topScore < config.ragMinScore) {
       const elapsedMs = Date.now() - started;

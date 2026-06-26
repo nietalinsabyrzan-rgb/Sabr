@@ -101,6 +101,29 @@ export function isGreetingOnly(text: string): boolean {
   return words.every((word) => isGreetingWord(word));
 }
 
+export function questionTextAfterGreeting(text: string): string {
+  const words = text
+    .toLocaleLowerCase("ru-RU")
+    .replace(/ё/g, "е")
+    .match(/[\p{L}\d]+/gu);
+  if (!words || words.length < 2) return text;
+
+  let firstQuestionWord = 0;
+  while (firstQuestionWord < words.length && isGreetingWord(words[firstQuestionWord])) {
+    firstQuestionWord++;
+  }
+  if (firstQuestionWord === 0 || firstQuestionWord >= words.length) return text;
+
+  const escapedGreetingWords = words
+    .slice(0, firstQuestionWord)
+    .map((word) => word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
+  const prefix = new RegExp(
+    `^\\s*(?:${escapedGreetingWords.join("[\\s,!.?;:-]+")})[\\s,!.?;:-]*`,
+    "iu",
+  );
+  return text.replace(prefix, "").trim() || text;
+}
+
 function isGreetingWord(word: string): boolean {
   if (GREETING_WORDS.has(word)) return true;
   if (word.length < 5) return false;
