@@ -19,6 +19,7 @@ import {
   detectLanguage,
   SENSITIVE_WARNING,
 } from "./redact.js";
+import { ConversationMemory } from "./conversation-memory.js";
 
 export function verify(req: Request, res: Response) {
   const mode = req.query["hub.mode"];
@@ -63,6 +64,8 @@ const queue = new RetryQueue<InboundJob>(processJob, {
 });
 const rateLimiter = new RateLimiter(config.rateLimitMaxEvents, config.rateLimitWindowMs);
 setInterval(() => rateLimiter.prune(), config.rateLimitWindowMs).unref();
+const conversationMemory = new ConversationMemory(config.conversationMemoryTtlMs);
+setInterval(() => conversationMemory.prune(), Math.min(config.conversationMemoryTtlMs, 10 * 60_000)).unref();
 const dmBatcher = new DmBatcher(
   config.dmBatchDelayMs,
   config.dmBatchMaxMessages,
@@ -199,6 +202,8 @@ async function processJob(job: InboundJob) {
   let result: GenerateReplyResult | undefined;
   let outAudited = false;
   const language = detectLanguage(text);
+  let modelInputText = text;
+  let usedConversationContext = false;
   const limit = rateLimiter.check(`${job.surface}:${job.targetId}`);
   if (!limit.allowed) {
     metrics.inc("events_rate_limited");
@@ -225,9 +230,15 @@ async function processJob(job: InboundJob) {
     metrics.inc("sensitive_blocked");
     reply = SENSITIVE_WARNING[language];
   } else {
+    if (job.surface === "dm") {
+      const augmented = conversationMemory.augmentIfDependent(job.targetId, text);
+      modelInputText = augmented.text;
+      usedConversationContext = augmented.usedContext;
+      if (usedConversationContext) metrics.inc("conversation_context_used");
+    }
     result = await generateReplyWithMeta({
       surface: job.surface,
-      userMessage: text,
+      userMessage: modelInputText,
       username: job.username,
       languageHint: language,
     });
@@ -248,8 +259,12 @@ async function processJob(job: InboundJob) {
       text: reply,
       language,
       replyChars: reply.length,
+      ...(usedConversationContext ? { flag: "used_context" } : {}),
       ...(result?.meta ? { model: result.meta } : {}),
     });
+  }
+  if (job.surface === "dm" && limit.allowed && !containsSensitive(text)) {
+    conversationMemory.remember(job.targetId, text, reply);
   }
   metrics.inc(`replies_sent_${job.surface}`);
   logger.info("reply sent", {
@@ -257,6 +272,7 @@ async function processJob(job: InboundJob) {
     targetId: job.targetId,
     language,
     replyChars: reply.length,
+    usedConversationContext,
     retrieved: result?.meta?.retrieved,
   });
 }
