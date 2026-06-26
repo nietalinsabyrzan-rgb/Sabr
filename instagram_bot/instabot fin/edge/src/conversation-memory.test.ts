@@ -9,6 +9,8 @@ test("detects short dependent follow-ups", () => {
   assert.equal(isDependentFollowUp("да"), true);
   assert.equal(isDependentFollowUp("а сколько?"), true);
   assert.equal(isDependentFollowUp("қалай?"), true);
+  assert.equal(isDependentFollowUp("здравствуйте"), false);
+  assert.equal(isDependentFollowUp("добрый день"), false);
   assert.equal(isDependentFollowUp("какая ставка по ипотеке"), false);
 });
 

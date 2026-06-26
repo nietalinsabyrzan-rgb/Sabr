@@ -24,6 +24,26 @@ const DEPENDENT_WORDS = new Set([
   "жарайды",
 ]);
 
+const GREETING_WORDS = new Set([
+  "привет",
+  "приветствую",
+  "приветсвую",
+  "здравствуйте",
+  "здраствуйте",
+  "здравствуй",
+  "здрасьте",
+  "здрасте",
+  "добрый",
+  "день",
+  "вечер",
+  "сәлем",
+  "салем",
+  "салам",
+  "сәлеметсізбе",
+  "салеметсизбе",
+  "саламатсызба",
+]);
+
 export interface ConversationTurn {
   userText: string;
   botReply: string;
@@ -168,6 +188,7 @@ export function isDependentFollowUp(text: string): boolean {
   if (!normalized) return false;
   const words = normalized.match(/[\p{L}\d]+/gu) ?? [];
   if (words.length === 0 || words.length > 4) return false;
+  if (words.every((word) => GREETING_WORDS.has(word))) return false;
   if (/[?？]/.test(normalized) && words.length > 2) return false;
   return words.every((word) => DEPENDENT_WORDS.has(word)) || normalized.length <= 12;
 }

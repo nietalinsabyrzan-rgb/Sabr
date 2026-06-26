@@ -10,6 +10,9 @@ test("detects Russian-only greetings", () => {
   assert.equal(isGreetingOnly("приветик"), true);
   assert.equal(isGreetingOnly("прив"), true);
   assert.equal(isGreetingOnly("Здравствуйте!"), true);
+  assert.equal(isGreetingOnly("здпасствуйте"), true);
+  assert.equal(isGreetingOnly("здраствуйтее"), true);
+  assert.equal(isGreetingOnly("здравстуйте"), true);
   assert.equal(isGreetingOnly("здрасьте"), true);
   assert.equal(isGreetingOnly("здрасте"), true);
   assert.equal(isGreetingOnly("здарова"), true);
@@ -34,6 +37,7 @@ test("detects Kazakh-only greetings", () => {
   assert.equal(isGreetingOnly("Салем"), true);
   assert.equal(isGreetingOnly("Салембердик"), true);
   assert.equal(isGreetingOnly("Салеметсизбе"), true);
+  assert.equal(isGreetingOnly("Салеметсзибе"), true);
   assert.equal(isGreetingOnly("Салеметсизба"), true);
   assert.equal(isGreetingOnly("Салеметсиз бе"), true);
   assert.equal(isGreetingOnly("Саламатсызба"), true);
