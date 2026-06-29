@@ -58,13 +58,15 @@ const server = app.listen(port, () => {
   }
 });
 
-// Token auto-refresh: check on boot and every 6h, refresh when older than
-// IG_TOKEN_REFRESH_DAYS (long-lived tokens expire after ~60 days).
-void tokenStore.refreshIfStale(config.graphHost, config.tokenRefreshDays);
-setInterval(
-  () => void tokenStore.refreshIfStale(config.graphHost, config.tokenRefreshDays),
-  6 * 3_600_000,
-).unref();
+// Token auto-refresh is only for Instagram-Login long-lived tokens. Facebook
+// Graph/Page tokens use a different lifecycle and should not hit this endpoint.
+if (config.graphHost.includes("graph.instagram.com")) {
+  void tokenStore.refreshIfStale(config.graphHost, config.tokenRefreshDays);
+  setInterval(
+    () => void tokenStore.refreshIfStale(config.graphHost, config.tokenRefreshDays),
+    6 * 3_600_000,
+  ).unref();
+}
 
 // Audit retention: prune old files daily.
 auditLog.prune();

@@ -42,7 +42,7 @@ export const config = {
   webhookVerifyToken: required("IG_WEBHOOK_VERIFY_TOKEN"),
   igAppSecret: webhookSignatureRequired ? required("IG_APP_SECRET") : optional("IG_APP_SECRET", ""),
   webhookSignatureRequired,
-  graphHost: optional("IG_GRAPH_HOST", "https://graph.instagram.com"),
+  graphHost: optional("IG_GRAPH_HOST", "https://graph.facebook.com"),
 
   // Internal-LAN URL of the model server, e.g. http://10.0.0.5:8080
   modelServerUrl: normalizeUrl(required("MODEL_SERVER_URL")),
