@@ -14,6 +14,22 @@ test("matches Kazakh deposit opening questions", () => {
   assert.match(match?.reply ?? "", /Депозитті/);
 });
 
+test("matches credit risk questions", () => {
+  const match = matchFaqOverride(
+    "Что такое кредитный риск и какие способы его снижения использует банк?",
+    "ru",
+    "dm",
+  );
+  assert.equal(match?.id, "credit_risk");
+  assert.match(match?.reply ?? "", /вероятность/);
+});
+
+test("matches Kazakh credit risk questions", () => {
+  const match = matchFaqOverride("Кредиттік тәуекел деген не?", "kk", "dm");
+  assert.equal(match?.id, "credit_risk");
+  assert.match(match?.reply ?? "", /Кредиттік тәуекел/);
+});
+
 test("does not match unrelated messages", () => {
   assert.equal(matchFaqOverride("сәлем", "kk", "dm"), undefined);
 });
