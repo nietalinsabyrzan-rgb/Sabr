@@ -1,0 +1,7 @@
+PyMuPDF
+certifi
+Pillow
+numpy
+scipy
+onnxruntime
+opencv-python
